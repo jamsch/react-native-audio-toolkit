@@ -353,9 +353,9 @@ public class AudioPlayerModule extends ReactContextBaseJavaModule implements Med
                 // If the player wasn't already playing, then setting the speed value to a non-zero value
                 // will start it playing and we don't want that so we need to make sure to pause it straight
                 // after setting the speed value
-                boolean wasAlreadyPlaying = player.isPlaying();
+                // boolean wasAlreadyPlaying = player.isPlaying();
                 float speedValue = (float) options.getDouble("speed");
-                needToPauseAfterSet = !wasAlreadyPlaying && speedValue != 0.0f;
+                // needToPauseAfterSet = !wasAlreadyPlaying && speedValue != 0.0f;
 
                 params.setSpeed(speedValue);
             }
@@ -366,9 +366,9 @@ public class AudioPlayerModule extends ReactContextBaseJavaModule implements Med
 
             player.setPlaybackParams(params);
 
-            if (needToPauseAfterSet) {
-                player.pause();
-            }
+            // if (needToPauseAfterSet) {
+            //    player.pause();
+            // }
         }
 
         callback.invoke();
