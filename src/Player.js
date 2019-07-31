@@ -24,22 +24,16 @@ const defaultPlayerOptions = {
  * @constructor
  */
 class Player extends EventEmitter {
-  constructor(path, options = defaultPlayerOptions) {
+  constructor(path, options) {
     super();
 
     this._path = path;
 
-    if (options == null) {
-      this._options = defaultPlayerOptions;
-    } else {
-      // Make sure all required options have values
-      if (options.autoDestroy == null)
-        options.autoDestroy = defaultPlayerOptions.autoDestroy;
-      if (options.continuesToPlayInBackground == null)
-        options.continuesToPlayInBackground = defaultPlayerOptions.continuesToPlayInBackground;
-
-      this._options = options;
-    }
+    this._options = {
+      ...defaultPlayerOptions,
+      ...(options || {}),
+    };
+    
 
     this._playerId = playerId++;
     this._reset();
@@ -286,12 +280,15 @@ class Player extends EventEmitter {
   get volume() {
     return this._volume;
   }
+
   get looping() {
     return this._looping;
   }
+
   get duration() {
     return this._duration;
   }
+
   get speed() {
     return this._speed;
   }
@@ -299,24 +296,31 @@ class Player extends EventEmitter {
   get state() {
     return this._state;
   }
+
   get canPlay() {
     return this._state >= MediaStates.PREPARED;
   }
+
   get canStop() {
     return this._state >= MediaStates.PLAYING;
   }
+
   get canPrepare() {
     return this._state == MediaStates.IDLE;
   }
+
   get isPlaying() {
     return this._state == MediaStates.PLAYING;
   }
+
   get isStopped() {
     return this._state <= MediaStates.PREPARED;
   }
+
   get isPaused() {
     return this._state == MediaStates.PAUSED;
   }
+  
   get isPrepared() {
     return this._state == MediaStates.PREPARED;
   }
