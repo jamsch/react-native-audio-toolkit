@@ -47,10 +47,12 @@ interface PlayerOptions {
     continuesToPlayInBackground?: boolean;
 }
 
+type PlayEvents = "play" | "pause" | "forcePause" | "ended" | "seek" | "info" | "error";
+
 /**
  * Represents a media player
  */
-declare class Player extends EventEmitter {
+declare class Player extends EventEmitter<PlayEvents> {
     /**
      * Initialize the player for playback of song in path.
      * 
