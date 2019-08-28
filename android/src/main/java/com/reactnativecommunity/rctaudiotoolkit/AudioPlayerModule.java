@@ -1,12 +1,9 @@
 package com.reactnativecommunity.rctaudiotoolkit;
 
-import android.content.Context;
-import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.media.PlaybackParams;
 import android.media.AudioAttributes;
 import android.media.AudioAttributes.Builder;
-import android.os.Build;
 import android.os.Environment;
 import android.os.PowerManager;
 import android.support.annotation.Nullable;
@@ -35,7 +32,7 @@ import java.util.Map.Entry;
 
 public class AudioPlayerModule extends ReactContextBaseJavaModule implements MediaPlayer.OnInfoListener,
         MediaPlayer.OnErrorListener, MediaPlayer.OnCompletionListener, MediaPlayer.OnSeekCompleteListener,
-        MediaPlayer.OnBufferingUpdateListener, LifecycleEventListener, AudioManager.OnAudioFocusChangeListener {
+        MediaPlayer.OnBufferingUpdateListener, LifecycleEventListener {
     private static final String LOG_TAG = "AudioPlayerModule";
 
     Map<Integer, MediaPlayer> playerPool = new HashMap<>();
@@ -45,14 +42,11 @@ public class AudioPlayerModule extends ReactContextBaseJavaModule implements Med
 
     boolean looping = false;
     private ReactApplicationContext context;
-    private AudioManager mAudioManager;
-    private Integer lastPlayerId;
 
     public AudioPlayerModule(ReactApplicationContext reactContext) {
         super(reactContext);
         this.context = reactContext;
         reactContext.addLifecycleEventListener(this);
-        this.mAudioManager = (AudioManager) this.context.getSystemService(Context.AUDIO_SERVICE);
     }
 
     @Override
@@ -62,32 +56,20 @@ public class AudioPlayerModule extends ReactContextBaseJavaModule implements Med
 
     @Override
     public void onHostPause() {
-        // Need to create a copy here because it is possible for other code to modify playerPool
-        // at the same time which will lead to a ConcurrentModificationException being thrown
-        Map<Integer, MediaPlayer> playerPoolCopy = new HashMap<>(this.playerPool);
-
-        for (Map.Entry<Integer, MediaPlayer> entry : playerPoolCopy.entrySet()) {
+        for (Map.Entry<Integer, MediaPlayer> entry : this.playerPool.entrySet()) {
             Integer playerId = entry.getKey();
 
             if (!this.playerContinueInBackground.get(playerId)) {
                 MediaPlayer player = entry.getValue();
-                if (player == null) {
-                    continue;
-                }
+                player.pause();
 
-                try {
-                    player.pause();
+                WritableMap info = getInfo(player);
 
-                    WritableMap info = getInfo(player);
+                WritableMap data = new WritableNativeMap();
+                data.putString("message", "Playback paused due to onHostPause");
+                data.putMap("info", info);
 
-                    WritableMap data = new WritableNativeMap();
-                    data.putString("message", "Playback paused due to onHostPause");
-                    data.putMap("info", info);
-
-                    emitEvent(playerId, "pause", data);
-                } catch (Exception e) {
-                    Log.e(LOG_TAG, e.toString());
-                }
+                emitEvent(playerId, "pause", data);
             }
         }
     }
@@ -115,14 +97,11 @@ public class AudioPlayerModule extends ReactContextBaseJavaModule implements Med
     private WritableMap errObj(final String code, final String message, final boolean enableLog) {
         WritableMap err = Arguments.createMap();
 
+        StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
         String stackTraceString = "";
-        try {
-            StackTraceElement[] stackTrace = Thread.currentThread().getStackTrace();
-            for (StackTraceElement e : stackTrace) {
-                stackTraceString += (e != null ? e.toString() : "null") + "\n";
-            }
-        } catch (Exception e) {
-            stackTraceString = "Exception occurred while parsing stack trace";
+
+        for (StackTraceElement e : stackTrace) {
+            stackTraceString += e.toString() + "\n";
         }
 
         err.putString("err", code);
@@ -241,7 +220,7 @@ public class AudioPlayerModule extends ReactContextBaseJavaModule implements Med
     }
 
     @ReactMethod
-    public void prepare(Integer playerId, String path, ReadableMap options, final Callback callback) {
+    public void prepare(Integer playerId, String path, ReadableMap options, Callback callback) {
         if (path == null || path.isEmpty()) {
             callback.invoke(errObj("nopath", "Provided path was empty"));
             return;
@@ -249,7 +228,6 @@ public class AudioPlayerModule extends ReactContextBaseJavaModule implements Med
 
         // Release old player if exists
         destroy(playerId);
-        this.lastPlayerId = playerId;
 
         Uri uri = uriFromPath(path);
 
@@ -277,14 +255,6 @@ public class AudioPlayerModule extends ReactContextBaseJavaModule implements Med
         player.setOnInfoListener(this);
         player.setOnCompletionListener(this);
         player.setOnSeekCompleteListener(this);
-        player.setOnPreparedListener(new MediaPlayer.OnPreparedListener() { // Async preparing, so we need to run the callback after preparing has finished
-
-            @Override
-            public void onPrepared(MediaPlayer player) {
-                callback.invoke(null, getInfo(player));
-            }
-
-        });
 
         this.playerPool.put(playerId, player);
 
@@ -306,7 +276,9 @@ public class AudioPlayerModule extends ReactContextBaseJavaModule implements Med
         this.playerContinueInBackground.put(playerId, continueInBackground);
 
         try {
-            player.prepareAsync();
+            player.prepare();
+
+            callback.invoke(null, getInfo(player));
         } catch (Exception e) {
             callback.invoke(errObj("prepare", e.toString()));
         }
@@ -344,20 +316,11 @@ public class AudioPlayerModule extends ReactContextBaseJavaModule implements Med
             this.looping = options.getBoolean("looping");
         }
 
-        // `PlaybackParams` was only added in API 23
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && (options.hasKey("speed") || options.hasKey("pitch"))) {
+        if (options.hasKey("speed") || options.hasKey("pitch")) {
             PlaybackParams params = new PlaybackParams();
 
-            boolean needToPauseAfterSet = false;
             if (options.hasKey("speed") && !options.isNull("speed")) {
-                // If the player wasn't already playing, then setting the speed value to a non-zero value
-                // will start it playing and we don't want that so we need to make sure to pause it straight
-                // after setting the speed value
-                // boolean wasAlreadyPlaying = player.isPlaying();
-                float speedValue = (float) options.getDouble("speed");
-                // needToPauseAfterSet = !wasAlreadyPlaying && speedValue != 0.0f;
-
-                params.setSpeed(speedValue);
+                params.setSpeed((float) options.getDouble("speed"));
             }
 
             if (options.hasKey("pitch") && !options.isNull("pitch")) {
@@ -365,10 +328,6 @@ public class AudioPlayerModule extends ReactContextBaseJavaModule implements Med
             }
 
             player.setPlaybackParams(params);
-
-            // if (needToPauseAfterSet) {
-            //    player.pause();
-            // }
         }
 
         callback.invoke();
@@ -383,7 +342,6 @@ public class AudioPlayerModule extends ReactContextBaseJavaModule implements Med
         }
 
         try {
-            this.mAudioManager.requestAudioFocus(this, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN);
             player.start();
 
             callback.invoke(null, getInfo(player));
@@ -401,19 +359,8 @@ public class AudioPlayerModule extends ReactContextBaseJavaModule implements Med
         }
 
         try {
-
             player.pause();
-
-            WritableMap info = getInfo(player);
-
-            WritableMap data = new WritableNativeMap();
-            data.putString("message", "Playback paused");
-            data.putMap("info", info);
-
-            emitEvent(playerId, "pause", data);
-
             callback.invoke(null, getInfo(player));
-
         } catch (Exception e) {
             callback.invoke(errObj("pause", e.toString()));
         }
@@ -564,23 +511,6 @@ public class AudioPlayerModule extends ReactContextBaseJavaModule implements Med
 
         return false;
     }
-
-    // Audio Focus
-    public void onAudioFocusChange(int focusChange)
-    {
-        switch (focusChange)
-        {
-            case AudioManager.AUDIOFOCUS_LOSS:
-            case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
-                //MediaPlayer player = this.playerPool.get(this.lastPlayerId);
-                WritableMap data = new WritableNativeMap();
-                data.putString("message", "Lost audio focus, playback paused");
-
-                this.emitEvent(this.lastPlayerId, "forcePause", data);
-                break;
-        }
-    }
-
 
     // Utils
     public static boolean equals(Object a, Object b) {
