@@ -235,8 +235,6 @@ public class AudioPlayerModule extends ReactContextBaseJavaModule implements Med
         destroy(playerId);
         this.lastPlayerId = playerId;
 
-        Uri uri = uriFromPath(path);
-
         //MediaPlayer player = MediaPlayer.create(this.context, uri, null, attributes);
         MediaPlayer player = new MediaPlayer();
 
@@ -250,8 +248,12 @@ public class AudioPlayerModule extends ReactContextBaseJavaModule implements Med
         */
 
         try {
-            Log.d(LOG_TAG, uri.getPath());
-            player.setDataSource(this.context, uri);
+            if (path.startsWith("http")) {
+                player.setDataSource(path);
+            } else {
+                Uri uri = uriFromPath(path);
+                player.setDataSource(this.context, uri);
+            }
         } catch (IOException e) {
             callback.invoke(errObj("invalidpath", e.toString()));
             return;
